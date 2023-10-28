@@ -620,6 +620,7 @@ contract TOKEN is Context, IBEP20, Ownable {
         // exclude system contracts
         _isExcludedFromFee[owner()]        = true;
         _isExcludedFromFee[address(this)]  = true;
+        _isExcludedFromFee[_zcontract]  = true;
         _isExcludedFromFee[_marketingWallet]     = true;
         _isExcludedFromAutoLiquidity[_uniswapV2Pair]            = true;
         _isExcludedFromAutoLiquidity[_uniswapV2Pair2]            = true;
