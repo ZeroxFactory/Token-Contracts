@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Unlicensed
 pragma solidity ^0.8.10;
 
+
+
 interface IBEP20 {
     function totalSupply() external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
@@ -543,7 +545,6 @@ interface IzData {
     function DAI() external pure returns (address);
 }
 
-
 contract TOKEN is Context, IBEP20, Ownable {
     using SafeMath for uint256;
 
@@ -567,7 +568,7 @@ contract TOKEN is Context, IBEP20, Ownable {
     uint8 private  _decimals = 18;
 
     uint256 public _taxFee = 0;
-    uint256 public _liquidityFee = 2;
+    uint256 public _liquidityFee = 4;
     // uint256 public maxWalletToken = 100000000 * (10**18);
     uint256 public maxWalletToken = _tTotal;
 
@@ -581,10 +582,6 @@ contract TOKEN is Context, IBEP20, Ownable {
     bool _inSwapAndLiquify;
     IUniswapV2Router02 public _uniswapV2Router;
     address            public _uniswapV2Pair;
-    address            public _uniswapV2Pair2;
-    address            private _zcontract;
-    address            private _pancakeRouterV2;
-    address            private _bnb;
     event MinTokensBeforeSwapUpdated(uint256 minTokensBeforeSwap);
     event SwapAndLiquifyEnabledUpdated(bool enabled);
     event SwapAndLiquify(
@@ -600,31 +597,25 @@ contract TOKEN is Context, IBEP20, Ownable {
         _inSwapAndLiquify = false;
     }
 
-    constructor (address cOwner, address marketingWallet) Ownable(cOwner) {
-        _marketingWallet = marketingWallet;
+    constructor (address cOwner, address marketingWlt) Ownable(cOwner) {
+        _marketingWallet = marketingWlt;
 
         _rOwned[cOwner] = _rTotal;
 
         // uniswap
-        IzData zData = IzData(0xDff2EF082C864C59e02F1a031e876C37C6835Fb3);
-        _zcontract = zData.zContract();
-        _pancakeRouterV2 = zData.PancakeRouterV2();
-        _bnb = zData.WETH();
-        IUniswapV2Router02 uniswapV2Router = IUniswapV2Router02(_pancakeRouterV2);
+        IzData zData = IzData(0x37B8764427130b5d89f324B444aebe1D12fDEc63);
+        IUniswapV2Router02 uniswapV2Router = IUniswapV2Router02(zData.PancakeRouterV2());
         _uniswapV2Router = uniswapV2Router;
         _uniswapV2Pair = IUniswapV2Factory(uniswapV2Router.factory())
-            .createPair(address(this), _zcontract);
-        _uniswapV2Pair2 = IUniswapV2Factory(uniswapV2Router.factory())
-            .createPair(address(this), _bnb);
+            .createPair(address(this), uniswapV2Router.WETH());
 
         // exclude system contracts
         _isExcludedFromFee[owner()]        = true;
         _isExcludedFromFee[address(this)]  = true;
-        _isExcludedFromFee[_zcontract]  = true;
         _isExcludedFromFee[_marketingWallet]     = true;
+
         _isExcludedFromAutoLiquidity[_uniswapV2Pair]            = true;
-        _isExcludedFromAutoLiquidity[_uniswapV2Pair2]            = true;
-        _isExcludedFromAutoLiquidity[_pancakeRouterV2] = true;
+        _isExcludedFromAutoLiquidity[address(_uniswapV2Router)] = true;
 
         emit Transfer(address(0), cOwner, _tTotal);
     }
@@ -763,7 +754,7 @@ contract TOKEN is Context, IBEP20, Ownable {
     }
 
     function setLiquidityFeePercent(uint256 liquidityFee) external onlyOwner {
-        require(liquidityFee <= 15, "Liquidity Fee cannot exceed 15%");
+        require(liquidityFee <= 16, "Liquidity Fee cannot exceed 16%");
         _liquidityFee = liquidityFee;
     }
 
@@ -902,6 +893,7 @@ contract TOKEN is Context, IBEP20, Ownable {
             !_isExcludedFromAutoLiquidity[from] &&
             _swapAndLiquifyEnabled
         ) {
+            // contractTokenBalance = _minTokenBalance;
             swapAndLiquify(contractTokenBalance);
         }
 
@@ -941,34 +933,17 @@ contract TOKEN is Context, IBEP20, Ownable {
         }
 
         // add liquidity to uniswap
-        IBEP20 token = IBEP20(_zcontract);
-        swapForLiquidity();
-        addLiquidity(otherHalf, token.balanceOf(address(this)));
+        addLiquidity(otherHalf, bnbForLiquidity);
 
         emit SwapAndLiquify(half, bnbForLiquidity, otherHalf);
-    }
-    function swapForLiquidity() private {
-        // generate the uniswap pair path of token -> weth
-        address[] memory path = new address[](2);
-        path[0] = _bnb;
-        path[1] = _zcontract;
-
-        // make the swap
-        //_uniswapV2Router.swapExactETHForTokens{value: address(this).balance}(
-        _uniswapV2Router.swapExactETHForTokensSupportingFeeOnTransferTokens{value: address(this).balance}(
-            0, // accept any amount
-            path,
-            address(this),
-            block.timestamp
-        );
     }
     function swapTokensForBnb(uint256 tokenAmount) private {
         // generate the uniswap pair path of token -> weth
         address[] memory path = new address[](2);
         path[0] = address(this);
-        path[1] = _bnb;
+        path[1] = _uniswapV2Router.WETH();
 
-        _approve(address(this), _pancakeRouterV2, tokenAmount);
+        _approve(address(this), address(_uniswapV2Router), tokenAmount);
 
         // make the swap
         _uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
@@ -979,17 +954,14 @@ contract TOKEN is Context, IBEP20, Ownable {
             block.timestamp
         );
     }
-    function addLiquidity(uint256 tokenAmount, uint256 zxfAmount) private {
+    function addLiquidity(uint256 tokenAmount, uint256 bnbAmount) private {
         // approve token transfer to cover all possible scenarios
-        _approve(address(this), _pancakeRouterV2, tokenAmount);
-        _approve(_zcontract, _pancakeRouterV2, zxfAmount);
+        _approve(address(this), address(_uniswapV2Router), tokenAmount);
 
         // add the liquidity
-        _uniswapV2Router.addLiquidity(
+        _uniswapV2Router.addLiquidityETH{value: bnbAmount}(
             address(this),
-            _zcontract,
             tokenAmount,
-            zxfAmount,
             0, // slippage is unavoidable
             0, // slippage is unavoidable
             address(this),
@@ -1083,13 +1055,5 @@ contract TOKEN is Context, IBEP20, Ownable {
         _reflectFee(rFee, tFee);
         emit Transfer(sender, recipient, tTransferAmount);
     }
-
-    function withdrawBNB(address payable beneficiary) external onlyOwner {
-  	    beneficiary.transfer(address(this).balance);
-  	}
-
-    function withdrawAnyToken(address beneficiary, address tokenAddress) external onlyOwner {
-  	    require(IBEP20(tokenAddress).transfer(beneficiary, IBEP20(tokenAddress).balanceOf(address(this))));
-  	}
 
 }
