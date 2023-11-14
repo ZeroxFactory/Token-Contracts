@@ -5,6 +5,8 @@ Learn how to edit and deploy the contracts
 
 https://www.youtube.com/watch?v=jocEqLQVIGI
 
+All this contracts created by https://0xfactory.com and it is completly free to use
+
 # How every contract works:
 ### 1- BEP20.sol : 
 this contract collect fees when holders buy, sell or transfer and devided the tax %50 will send to the marketing wallet in BNB and %50 will added to the liquidity pool
