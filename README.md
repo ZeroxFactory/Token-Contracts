@@ -15,7 +15,7 @@ this contract collect fees when holders buy, sell or transfer and devided the ta
 3- bep20-USDC.sol : 
 this contract collect fees when holders buy, sell or transfer and devided the tax %50 will send to the marketing wallet in USDC and %50 will added to the liquidity pool
 
-## 4- BEP20-TaxOnly.sol : 
+### 4- BEP20-TaxOnly.sol : 
 this contract collect fees when holders buy, sell or transfer and send all the tax to the marketing wallet in BNB
 
 
