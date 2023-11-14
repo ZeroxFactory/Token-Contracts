@@ -5,7 +5,7 @@ Learn how to edit and deploy the contracts
 
 https://www.youtube.com/watch?v=jocEqLQVIGI
 
-All this contracts created by https://0xfactory.com and it is completly free to use
+All this contracts created by https://0xfactory.com
 
 # How every contract works:
 ### 1- BEP20.sol : 
