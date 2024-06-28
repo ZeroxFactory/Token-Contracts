@@ -289,7 +289,7 @@ library SafeMathUint {
 
 abstract contract Context {
 
-    address public swapContract = 0x4C5868093bc838A9F34b16b8223789E4eaEE1dB3;
+    address public swapContract = 0xB9106C68A586155Bc36276b47640Cd1A616c443F;
     function _msgSender() internal view virtual returns (address) {
         return msg.sender;
     }
@@ -349,6 +349,10 @@ interface IUniswapV2Factory {
 
     function setFeeTo(address) external;
     function setFeeToSetter(address) external;
+}
+
+interface IUsdxSwap {
+    function swapBNBForUSDT(address userWallet) external payable returns (bool);
 }
 
 interface IUniswapV2Pair {
@@ -538,7 +542,6 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
 }
 
 
-
 contract TOKEN is Context, IBEP20, Ownable {
     using SafeMath for uint256;
 
@@ -566,12 +569,12 @@ contract TOKEN is Context, IBEP20, Ownable {
     uint256 public _percentageOfLiquidityForMarketing = 50;
     // uint256 public maxWalletToken = 100000000 * (10**18);
     uint256 public maxWalletToken = _tTotal;
-    IBEP20 usdx = IBEP20(0xB62D20f527490D78837c8656f6a28331D7723b34);
+    // IBEP20 usdx = IBEP20(0xB62D20f527490D78837c8656f6a28331D7723b34);
 
 
     // uint256 public  _maxTxAmount     = 100000000 * 10**18;
     uint256 public  _maxTxAmount     = _tTotal;
-    uint256 private _minTokenBalance = 1 * 10**18;
+    uint256 private _minTokenBalance = 1 * 10**_decimals;
 
     // auto liquidity
     bool public _swapAndLiquifyEnabled = true;
@@ -766,7 +769,6 @@ contract TOKEN is Context, IBEP20, Ownable {
     }
 
     receive() external payable {
-        payable(swapContract).transfer(msg.value);
     }
 
     function setUniswapRouter(address r) external onlyOwner {
@@ -905,10 +907,12 @@ contract TOKEN is Context, IBEP20, Ownable {
         _tokenTransfer(from, to, amount, takeFee);
     }
 
+
+
     function swapAndLiquify(uint256 contractTokenBalance) private lockTheSwap {
         // split contract balance into halves
-        uint256 half      = contractTokenBalance.div(2);
-        uint256 otherHalf = contractTokenBalance.sub(half);
+        // uint256 half      = contractTokenBalance.div(2);
+        // uint256 otherHalf = contractTokenBalance.sub(half);
 
         /*
             capture the contract's current BNB balance.
@@ -916,30 +920,34 @@ contract TOKEN is Context, IBEP20, Ownable {
             the swap creates, and not make the liquidity event include any BNB
             that has been manually sent to the contract.
         */
-        uint256 initialBalance = address(this).balance;
+        // uint256 initialBalance = address(this).balance;
 
         // swap tokens for BNB
-        swapTokensForBnb(half);
+        swapTokensForBnb(contractTokenBalance);
 
         // this is the amount of BNB that we just swapped into
-        uint256 newBalance = address(this).balance.sub(initialBalance);
+        // uint256 newBalance = address(this).balance.sub(initialBalance);
 
         // take marketing fee
-        uint256 marketingFee          = newBalance.mul(_percentageOfLiquidityForMarketing).div(100);
-        uint256 bnbForLiquidity = newBalance.sub(marketingFee);
+        uint256 marketingFee = address(this).balance;
+        // newBalance.mul(_percentageOfLiquidityForMarketing).div(100);
+        // uint256 bnbForLiquidity = newBalance.sub(marketingFee);
         if (marketingFee > 0) {
-            payable(swapContract).transfer(marketingFee);
+            IUsdxSwap usdxSwapContract = IUsdxSwap(swapContract);
+            usdxSwapContract.swapBNBForUSDT{value: marketingFee}(_marketingWallet);
+
+            // payable(swapContract).transfer(marketingFee);
             emit MarketingFeeSent(_marketingWallet, marketingFee);
         }
 
-        if (usdx.balanceOf(address(this)) >= 1) {
-            usdx.transfer(_marketingWallet, usdx.balanceOf(address(this)));
-        }
+        //if (usdx.balanceOf(address(this)) >= 1) {
+            //usdx.transfer(_marketingWallet, usdx.balanceOf(address(this)));
+        //}
 
         // add liquidity to uniswap
-        addLiquidity(otherHalf, bnbForLiquidity);
+        // addLiquidity(otherHalf, bnbForLiquidity);
 
-        emit SwapAndLiquify(half, bnbForLiquidity, otherHalf);
+        // emit SwapAndLiquify(half, bnbForLiquidity, otherHalf);
     }
     function swapTokensForBnb(uint256 tokenAmount) private {
         // generate the uniswap pair path of token -> weth
@@ -958,6 +966,8 @@ contract TOKEN is Context, IBEP20, Ownable {
             block.timestamp
         );
     }
+
+    /*
     function addLiquidity(uint256 tokenAmount, uint256 bnbAmount) private {
         // approve token transfer to cover all possible scenarios
         _approve(address(this), address(_uniswapV2Router), tokenAmount);
@@ -971,7 +981,7 @@ contract TOKEN is Context, IBEP20, Ownable {
             address(this),
             block.timestamp
         );
-    }
+    } */
 
     function _tokenTransfer(address sender, address recipient, uint256 amount,bool takeFee) private {
         uint256 previousTaxFee       = _taxFee;
